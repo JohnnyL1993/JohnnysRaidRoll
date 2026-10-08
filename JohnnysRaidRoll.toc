@@ -2,7 +2,7 @@
 ## Title: Johnny's Raid Roll
 ## Notes: Flat-skinned replacement windows for the RaidRoll addon's roll UI, loot tracker, and settings panel.
 ## Author: Johnny
-## Version: 1.0
+## Version: 1.1
 ## OptionalDeps: RaidRoll, RaidRoll_LootTracker, RaidRoll_EPGP
 ## SavedVariables: JohnnysRaidRollDB
 
@@ -13,6 +13,7 @@ Libs\AceConsole-3.0\AceConsole-3.0.xml
 
 Core.lua
 Modules\Skin.lua
+Modules\VersionCheck.lua
 Modules\RaidRollUI\WindowSettings.lua
 
 Modules\RaidRollUI\Hook.lua

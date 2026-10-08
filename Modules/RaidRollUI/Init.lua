@@ -75,6 +75,8 @@ local function BuildFrame()
 	close:SetPoint("TOPRIGHT", -4, -4)
 	close:SetScript("OnClick", function() RaidRollUI:Toggle() end)
 
+	JohnnysRaidRoll.VersionCheck:AttachNotice(mainFrame)
+
 	if JohnnysRaidRoll.WindowSettings then
 		JohnnysRaidRoll.WindowSettings:AttachButton(mainFrame)
 	end
