@@ -11,10 +11,12 @@ local RaidRollUI = JohnnysRaidRoll.RaidRollUI
 local Skin = JohnnysRaidRoll.Skin
 
 local ROW_HEIGHT = 20
-local COLUMN_ORDER = { "pos", "name", "roll" }
-local COLUMN_WIDTHS = { pos = 26, name = 150, roll = 90 }
+local COLUMN_ORDER = { "pos", "name", "roll", "status" }
+local COLUMN_WIDTHS = { pos = 28, name = 170, roll = 76, status = 70 }
+-- After the text columns: the icon-marker box, then the Ignore/Restore button.
 local MARK_WIDTH = 24
-local ROW_WIDTH = MARK_WIDTH
+local IGNORE_WIDTH = 62
+local ROW_WIDTH = MARK_WIDTH + IGNORE_WIDTH + 6
 for _, key in ipairs(COLUMN_ORDER) do
 	ROW_WIDTH = ROW_WIDTH + COLUMN_WIDTHS[key]
 end
@@ -148,7 +150,26 @@ local function OnAnnounceWinnerClick()
 	end
 end
 
+-- What clicking the Award button will do in each of its states, shown on the
+-- line above the button bar (the button's own label is ComputeAwardLabel's).
+local function AwardHelp(label)
+	if label == "Awaiting Rolls" then
+		return "Rolling is open - waiting for rolls.", true
+	elseif label == "10 sec + Announce" then
+		return "Click to give a 10 second warning, then announce the winner.", true
+	elseif label == "Finish Early" then
+		return "Click to close rolling now and announce the winner.", true
+	elseif label == "No Winner" then
+		return "Rolling is closed and nobody has an eligible roll.", false
+	elseif label == "No Item" then
+		return "No item is being rolled for. Start one from the Raid Loot window or with New Roll.", false
+	end
+	-- "Award <Name>"
+	return "Rolling is closed. Click to award the item to the winner.", true
+end
+
 local function CreateRollRow(parent)
+	local C = Skin.C
 	local row = CreateFrame("Button", nil, parent)
 	row:SetSize(ROW_WIDTH, ROW_HEIGHT)
 	row:SetBackdrop({ bgFile = Skin.WHITE })
@@ -159,17 +180,25 @@ local function CreateRollRow(parent)
 	highlight:SetTexture(Skin.WHITE)
 	highlight:SetVertexColor(1, 1, 1, 0.06)
 
+	-- Lime bar down the left edge of whoever is currently winning.
+	row.leadBar = Skin:Solid(row, "ARTWORK", C.accent)
+	row.leadBar:SetPoint("TOPLEFT", row, "TOPLEFT", 0, 0)
+	row.leadBar:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", 0, 0)
+	row.leadBar:SetWidth(2)
+	row.leadBar:Hide()
+
 	for _, key in ipairs(COLUMN_ORDER) do
 		local fs = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		fs:SetPoint("LEFT", row, "LEFT", ColumnX(key) + 4, 0)
-		fs:SetWidth(COLUMN_WIDTHS[key] - 6)
-		fs:SetJustifyH(key == "name" and "LEFT" or "CENTER")
+		fs:SetPoint("LEFT", row, "LEFT", ColumnX(key) + 6, 0)
+		fs:SetWidth(COLUMN_WIDTHS[key] - 8)
+		fs:SetJustifyH("LEFT")
 		row[key] = fs
 	end
 
+	-- Raid-target icon marker for this player (RaidRoll's own "mark" command).
 	local mark = CreateFrame("Button", nil, row)
 	mark:SetSize(MARK_WIDTH - 4, ROW_HEIGHT - 2)
-	mark:SetPoint("LEFT", row, "LEFT", ColumnX("roll") + COLUMN_WIDTHS.roll + 2, 0)
+	mark:SetPoint("LEFT", row, "LEFT", ColumnX("status") + COLUMN_WIDTHS.status + 2, 0)
 	Skin:StyleButton(mark)
 	local markText = mark:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
 	markText:SetPoint("CENTER")
@@ -180,9 +209,7 @@ local function CreateRollRow(parent)
 		if not row.index then
 			return
 		end
-		if button == "RightButton" then
-			RR_Ignore(row.index)
-		elseif IsShiftKeyDown() then
+		if button == "RightButton" or IsShiftKeyDown() then
 			RR_Command("unmark " .. row.index)
 		else
 			RR_Command("mark " .. row.index)
@@ -190,13 +217,36 @@ local function CreateRollRow(parent)
 	end)
 	mark:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:AddLine("Left-click: mark/cycle icon", 1, 1, 1)
-		GameTooltip:AddLine("Shift+Left-click: unmark", 1, 1, 1)
-		GameTooltip:AddLine("Right-click: ignore/unignore", 1, 1, 1)
+		GameTooltip:AddLine("Icon marker", 1, 1, 1)
+		GameTooltip:AddLine("Click to put an icon by this player, click again to change it.", nil, nil, nil, true)
+		GameTooltip:AddLine("Right-click to clear it.", nil, nil, nil, true)
 		GameTooltip:Show()
 	end)
 	mark:SetScript("OnLeave", function() GameTooltip:Hide() end)
 	row.mark = mark
+
+	-- Ignore / Restore: takes this player's roll out of the running (or puts
+	-- it back). Used to be a right-click on the marker box.
+	local ignoreBtn = Skin:CreateButton(row, IGNORE_WIDTH - 4, ROW_HEIGHT - 2, "Ignore")
+	ignoreBtn:SetPoint("LEFT", mark, "RIGHT", 4, 0)
+	ignoreBtn:SetScript("OnClick", function()
+		if row.index then
+			RR_Ignore(row.index)
+		end
+	end)
+	ignoreBtn:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+		if row.ignored then
+			GameTooltip:AddLine("Restore", 1, 1, 1)
+			GameTooltip:AddLine("Counts this player's roll again.", nil, nil, nil, true)
+		else
+			GameTooltip:AddLine("Ignore", 1, 1, 1)
+			GameTooltip:AddLine("Takes this player's roll out of the running for this item. They stay in the list so you can restore them.", nil, nil, nil, true)
+		end
+		GameTooltip:Show()
+	end)
+	ignoreBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	row.ignoreBtn = ignoreBtn
 
 	row:SetScript("OnEnter", function(self)
 		if not self.itemLink then
@@ -212,6 +262,7 @@ local function CreateRollRow(parent)
 end
 
 function RaidRollUI.BuildRollTab(parent)
+	local C = Skin.C
 	local rows = {}
 
 	local header = CreateFrame("Frame", nil, parent)
@@ -219,11 +270,10 @@ function RaidRollUI.BuildRollTab(parent)
 	header:SetPoint("TOPRIGHT", 0, 0)
 	header:SetHeight(32)
 
-	-- Icon for the currently active roll's item, mirroring the Loot tab's row
-	-- icons (LootWindow.lua's CreateLootRow). GameTooltip:SetHyperlink is the
-	-- same call used on every other tooltip in this module - holding Shift
-	-- while hovering triggers the client's own built-in equipped-item compare
-	-- tooltip automatically, nothing extra to wire up for that.
+	-- Icon for the currently active roll's item. GameTooltip:SetHyperlink is
+	-- the same call used on every other tooltip in this module - holding
+	-- Shift while hovering triggers the client's own built-in equipped-item
+	-- compare tooltip automatically.
 	local itemIcon = CreateFrame("Button", nil, header)
 	itemIcon:SetSize(28, 28)
 	itemIcon:SetPoint("LEFT", 2, 0)
@@ -241,11 +291,20 @@ function RaidRollUI.BuildRollTab(parent)
 	end)
 	itemIcon:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+	-- Countdown: its own large number on the right of the header, rather
+	-- than "(37)" tucked in front of the item name. Red for the last 10s.
+	local timerText = Skin:Heading(header, 22, C.text)
+	timerText:SetPoint("RIGHT", header, "RIGHT", -4, 0)
+	timerText:SetJustifyH("RIGHT")
+	local timerLabel = Skin:Heading(header, 10, C.muted)
+	timerLabel:SetPoint("RIGHT", timerText, "LEFT", -6, -2)
+	timerLabel:SetText("TIME LEFT")
+
 	local itemText = header:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
 	itemText:SetPoint("LEFT", itemIcon, "RIGHT", 6, 0)
 	itemText:SetTextColor(1, 1, 1)
 	itemText:SetJustifyH("LEFT")
-	itemText:SetWidth(370)
+	itemText:SetWidth(300)
 
 	local itemFrame = CreateFrame("Frame", nil, header)
 	itemFrame:SetAllPoints(itemText)
@@ -262,24 +321,39 @@ function RaidRollUI.BuildRollTab(parent)
 	local colHeader = CreateFrame("Frame", nil, parent)
 	colHeader:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
 	colHeader:SetSize(ROW_WIDTH, 18)
-	local LABELS = { pos = "#", name = "Name", roll = "Roll/PR" }
+	local LABELS = { pos = "#", name = "NAME", roll = "ROLL", status = "" }
+	local rollHeader
 	for _, key in ipairs(COLUMN_ORDER) do
-		local fs = colHeader:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-		fs:SetPoint("LEFT", colHeader, "LEFT", ColumnX(key) + 4, 0)
-		fs:SetTextColor(0.7, 0.7, 0.7)
+		local fs = Skin:Heading(colHeader, 10, C.muted)
+		fs:SetPoint("LEFT", colHeader, "LEFT", ColumnX(key) + 6, 0)
 		fs:SetText(LABELS[key])
+		if key == "roll" then
+			rollHeader = fs
+		end
 	end
+	local headRule = Skin:Solid(colHeader, "ARTWORK", C.rule)
+	headRule:SetPoint("BOTTOMLEFT", colHeader, "BOTTOMLEFT", 0, 0)
+	headRule:SetPoint("BOTTOMRIGHT", colHeader, "BOTTOMRIGHT", 0, 0)
+	headRule:SetHeight(1)
 
 	-- Named so UIPanelScrollFrameTemplate's "$parent..." child regions (the
 	-- scrollbar) don't collide with other anonymous scrollframes' children.
 	local listScroll = CreateFrame("ScrollFrame", "JohnnysAddonHubRaidRollRollScroll", parent, "UIPanelScrollFrameTemplate")
 	listScroll:SetPoint("TOPLEFT", colHeader, "BOTTOMLEFT", 0, -4)
-	listScroll:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -30, 40)
+	listScroll:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -30, 68)
 	listScroll:SetWidth(ROW_WIDTH)
 
 	local listContent = CreateFrame("Frame", nil, listScroll)
 	listContent:SetSize(ROW_WIDTH, 20)
 	listScroll:SetScrollChild(listContent)
+
+	local emptyText = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	emptyText:SetPoint("TOPLEFT", listScroll, "TOPLEFT", 6, -8)
+	emptyText:SetWidth(ROW_WIDTH - 12)
+	emptyText:SetJustifyH("LEFT")
+	emptyText:SetTextColor(C.muted[1], C.muted[2], C.muted[3])
+	emptyText:SetText("No rolls yet for this item.")
+	emptyText:Hide()
 
 	local function LayoutRows()
 		for i, row in ipairs(rows) do
@@ -289,59 +363,111 @@ function RaidRollUI.BuildRollTab(parent)
 		listContent:SetHeight(math.max(20, #rows * ROW_HEIGHT))
 	end
 
+	-- Two status lines between the list and the buttons: rolls the list is
+	-- leaving out (and why), then what the Award button will do right now.
+	local hiddenText = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	hiddenText:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 0, 48)
+	hiddenText:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 48)
+	hiddenText:SetJustifyH("LEFT")
+	hiddenText:SetTextColor(C.short[1], C.short[2], C.short[3])
+
+	local helpText = parent:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	helpText:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 0, 30)
+	helpText:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", 0, 30)
+	helpText:SetJustifyH("LEFT")
+	helpText:SetTextColor(C.muted[1], C.muted[2], C.muted[3])
+
+	local function Tip(btn, anchor, title, body)
+		btn:SetScript("OnEnter", function(self)
+			GameTooltip:SetOwner(self, anchor)
+			GameTooltip:AddLine(title, 1, 1, 1)
+			if body then
+				GameTooltip:AddLine(body, nil, nil, nil, true)
+			end
+			GameTooltip:Show()
+		end)
+		btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	end
+
 	-- Bottom control bar.
-	local prevBtn = Skin:CreateButton(parent, 60, 22, "< Prev")
+	local prevBtn = Skin:CreateButton(parent, 54, 22, "< Prev")
 	prevBtn:SetPoint("BOTTOMLEFT", 0, 0)
 	prevBtn:SetScript("OnClick", function() RR_PrevRoll() end)
+	Tip(prevBtn, "ANCHOR_RIGHT", "Previous roll", "Look back at the roll before this one.")
 
-	local newBtn = Skin:CreateButton(parent, 80, 22, "New Roll")
+	local newBtn = Skin:CreateButton(parent, 70, 22, "New Roll")
 	newBtn:SetPoint("LEFT", prevBtn, "RIGHT", 4, 0)
 	newBtn:SetScript("OnClick", function() RR_NewRoll() end)
+	Tip(newBtn, "ANCHOR_RIGHT", "New roll", "Start a fresh roll with an empty list and a new timer.")
 
-	local nextBtn = Skin:CreateButton(parent, 60, 22, "Next >")
+	local nextBtn = Skin:CreateButton(parent, 54, 22, "Next >")
 	nextBtn:SetPoint("LEFT", newBtn, "RIGHT", 4, 0)
 	nextBtn:SetScript("OnClick", function() RR_NextRoll() end)
+	Tip(nextBtn, "ANCHOR_RIGHT", "Next roll", "Move forward to the roll after this one.")
 
-	local rollBtn = Skin:CreateButton(parent, 30, 22, "R")
+	local rollBtn = Skin:CreateButton(parent, 44, 22, "Roll")
 	rollBtn:SetPoint("LEFT", nextBtn, "RIGHT", 4, 0)
 	rollBtn:SetScript("OnClick", function() RandomRoll(1, 100) end)
-	rollBtn:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-		GameTooltip:AddLine("Quick /roll 1-100", 1, 1, 1)
-		GameTooltip:Show()
-	end)
-	rollBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	Tip(rollBtn, "ANCHOR_RIGHT", "Roll", "Makes your own /roll 1-100.")
 
-	local announceBtn = Skin:CreateButton(parent, 30, 22, "A")
+	local announceBtn = Skin:CreateButton(parent, 70, 22, "Announce")
 	announceBtn:SetPoint("BOTTOMRIGHT", 0, 0)
 	announceBtn:SetScript("OnClick", OnAnnounceWinnerClick)
-	announceBtn:SetScript("OnEnter", function(self)
-		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-		GameTooltip:AddLine("Announce current winner", 1, 1, 1)
-		GameTooltip:Show()
-	end)
-	announceBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	Tip(announceBtn, "ANCHOR_LEFT", "Announce winner", "Posts the current winner and their roll to the group, without awarding anything.")
 
-	local awardBtn = Skin:CreateButton(parent, 160, 22, "Awaiting Rolls")
+	local awardBtn = Skin:CreateButton(parent, 150, 22, "Awaiting Rolls")
 	awardBtn:SetPoint("RIGHT", announceBtn, "LEFT", -4, 0)
 	awardBtn:SetScript("OnClick", OnAwardClick)
+	-- Painted in Refresh (lime while it awards, greyed while it does nothing),
+	-- so drop StyleButton's own press/release repaint.
+	awardBtn:SetScript("OnMouseDown", nil)
+	awardBtn:SetScript("OnMouseUp", nil)
+
+	local function PaintAward(label, enabled)
+		if not enabled then
+			awardBtn:Disable()
+			awardBtn:SetBackdropColor(C.panel[1], C.panel[2], C.panel[3], 0.95)
+			awardBtn:SetBackdropBorderColor(C.rule[1], C.rule[2], C.rule[3], 1)
+			awardBtn.text:SetTextColor(C.dim[1], C.dim[2], C.dim[3])
+			return
+		end
+		awardBtn:Enable()
+		if string.sub(label, 1, 6) == "Award " then
+			awardBtn:SetBackdropColor(C.accent[1], C.accent[2], C.accent[3], 1)
+			awardBtn:SetBackdropBorderColor(C.accent[1], C.accent[2], C.accent[3], 1)
+			awardBtn.text:SetTextColor(C.ground[1], C.ground[2], C.ground[3])
+		else
+			awardBtn:SetBackdropColor(C.panel[1], C.panel[2], C.panel[3], 0.95)
+			awardBtn:SetBackdropBorderColor(C.rule2[1], C.rule2[2], C.rule2[3], 1)
+			awardBtn.text:SetTextColor(C.text[1], C.text[2], C.text[3])
+		end
+	end
 
 	local function Refresh()
 		local player = UnitName("player")
 		local opts = RaidRoll_DBPC and RaidRoll_DBPC[player]
+		local epgp = opts and opts["RR_EPGP_Enabled"] == true
+		rollHeader:SetText(epgp and "PR" or "ROLL")
 
-		-- Item header + countdown, mirroring the RR_Itemname text RR_Display
-		-- would have shown (RaidRoll_OnLoad.lua:1734-1739) without calling it.
+		-- Item header + countdown, from the same values RR_Display would have
+		-- used (RaidRoll_OnLoad.lua:1734-1739) without calling it.
+		local rollingOpen = false
 		if rr_Item and rr_CurrentRollID and rr_Item[rr_CurrentRollID] then
 			local link = rr_Item[rr_CurrentRollID]
 			itemFrame.itemLink = link:find("item:") and link or nil
 			itemIcon.itemLink = itemFrame.itemLink
 			local icon = itemIcon.itemLink and GetItemIcon(itemIcon.itemLink)
 			itemIcon.tex:SetTexture(icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+			itemText:SetText(link)
 			if RR_Timestamp and rr_rollID == rr_CurrentRollID and time() < RR_Timestamp + 60 then
-				itemText:SetText(string.format("(%d) %s", 60 - time() + RR_Timestamp, link))
-			else
-				itemText:SetText(link)
+				rollingOpen = true
+				local left = 60 - time() + RR_Timestamp
+				timerText:SetText(left .. "s")
+				if left <= 10 then
+					timerText:SetTextColor(C.short[1], C.short[2], C.short[3])
+				else
+					timerText:SetTextColor(C.text[1], C.text[2], C.text[3])
+				end
 			end
 		else
 			itemFrame.itemLink = nil
@@ -349,8 +475,19 @@ function RaidRollUI.BuildRollTab(parent)
 			itemIcon.tex:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
 			itemText:SetText("No roll yet")
 		end
+		if rollingOpen then
+			timerText:Show()
+			timerLabel:Show()
+		else
+			timerText:Hide()
+			timerLabel:Hide()
+		end
 
-		awardBtn.text:SetText(ComputeAwardLabel())
+		local awardLabel = ComputeAwardLabel()
+		local help, awardEnabled = AwardHelp(awardLabel)
+		awardBtn.text:SetText(awardLabel)
+		PaintAward(awardLabel, awardEnabled)
+		helpText:SetText(help)
 
 		if rr_rollID and rr_rollID ~= 0 then
 			if rr_CurrentRollID < rr_rollID then nextBtn:Enable() else nextBtn:Disable() end
@@ -361,9 +498,14 @@ function RaidRollUI.BuildRollTab(parent)
 		end
 
 		-- Row data: the same raw arrays RR_Display reads, not RR_Display
-		-- itself (see file header comment).
+		-- itself (see file header comment). RaidRoll keeps them ranked, best
+		-- first, so the first row that isn't ignored is the current winner
+		-- (the same rule RR_FindWinner applies).
 		local rollID = rr_CurrentRollID
 		local count = 0
+		local hiddenRange, hiddenExtra = 0, 0
+		local leaderValue
+		local shown = {}
 		if rollID and MaxPlayers and MaxPlayers[rollID] and RollerName and RollerName[rollID] then
 			local acceptAll = opts and opts["RR_Accept_All_Rolls"] == true
 			local allowExtra = opts and opts["RR_AllowExtraRolls"] == true
@@ -373,9 +515,12 @@ function RaidRollUI.BuildRollTab(parent)
 				if name and name ~= "" then
 					local legit = RaidRoll_LegitRoll and RaidRoll_LegitRoll[rollID] and RaidRoll_LegitRoll[rollID][j]
 					local first = RollerFirst and RollerFirst[rollID] and RollerFirst[rollID][j]
-					local hidden = (legit == false and not acceptAll) or (not allowExtra and first == false)
 
-					if not hidden then
+					if legit == false and not acceptAll then
+						hiddenRange = hiddenRange + 1
+					elseif not allowExtra and first == false then
+						hiddenExtra = hiddenExtra + 1
+					else
 						count = count + 1
 						local row = rows[count]
 						if not row then
@@ -387,36 +532,38 @@ function RaidRollUI.BuildRollTab(parent)
 						row.index = j
 						local nameLower = name:lower()
 						local ignored = RR_IgnoredList and RR_IgnoredList[rollID] and RR_IgnoredList[rollID][nameLower]
+						row.ignored = ignored and true or false
 
 						row.pos:SetText(tostring(j))
 
-						-- Chat-claim mark: additive prefix only, doesn't touch the
-						-- ignored/class-color logic below (RaidRoll_DB["ChatClaims"]
-						-- is written by RaidRoll_OnLoad.lua's RR_RecordChatClaim
-						-- during the MS/OS buttons' 20-second listening window).
-						local claimMark = ""
+						-- Main-spec chat claim (RaidRoll_DB["ChatClaims"] is written
+						-- by RaidRoll_OnLoad.lua's RR_RecordChatClaim during the
+						-- MS/OS buttons' 20-second listening window).
+						local claimTag = ""
 						if RaidRoll_DB and RaidRoll_DB["ChatClaims"] and RaidRoll_DB["ChatClaims"][nameLower] then
-							claimMark = "|cFFFFD200*|r "
+							claimTag = "  |cffb9e24aMS|r"
 						end
 
 						local color = (RollerColor and RollerColor[rollID] and RollerColor[rollID][j]) or ""
 						if ignored then
 							row.name:SetTextColor(0.6, 0.3, 0.3)
-							row.name:SetText(claimMark .. name)
+							row.name:SetText(name .. claimTag)
 						else
 							row.name:SetTextColor(1, 1, 1)
 							if color ~= "" then
-								row.name:SetText(claimMark .. color .. name .. "|r")
+								row.name:SetText(color .. name .. "|r" .. claimTag)
 							else
-								row.name:SetText(claimMark .. name)
+								row.name:SetText(name .. claimTag)
 							end
 						end
 
-						if opts and opts["RR_EPGP_Enabled"] == true then
+						local value
+						if epgp then
 							local pr = RR_EPGP_PRValue and RR_EPGP_PRValue[rollID] and RR_EPGP_PRValue[rollID][j] or 0
 							local above = RR_EPGPAboveThreshold and RR_EPGPAboveThreshold[rollID] and RR_EPGPAboveThreshold[rollID][j]
 							row.roll:SetTextColor(above and 0.67 or 0.77, above and 0.83 or 0.12, above and 0.45 or 0.23)
 							row.roll:SetText(tostring(pr))
+							value = pr
 						else
 							local rollVal = RollerRoll and RollerRoll[rollID] and RollerRoll[rollID][j] or 0
 							local extra = (legit == false) and "*" or ""
@@ -427,24 +574,83 @@ function RaidRollUI.BuildRollTab(parent)
 							else
 								row.roll:SetText(tostring(rollVal) .. extra)
 							end
+							value = rollVal
+						end
+						row.value = value
+						if not ignored and leaderValue == nil then
+							leaderValue = value
+							row.isLeader = true
+						else
+							row.isLeader = false
 						end
 
 						local markIcon = opts and opts["RR_NameMark"] and opts["RR_NameMark"][nameLower]
 						row.mark.text:SetText(markIcon and (opts["RR_PlayerIcon"] and opts["RR_PlayerIcon"][nameLower]) or "")
-						row.mark:SetBackdropColor(ignored and 0.3 or 0.06, ignored and 0.08 or 0.06, ignored and 0.08 or 0.06, 0.95)
+						row.ignoreBtn.text:SetText(ignored and "Restore" or "Ignore")
 
 						local link = rr_Item and rr_Item[rollID]
 						row.itemLink = link and link:find("item:") and link or nil
 
+						table.insert(shown, row)
 						row:Show()
 					end
 				end
 			end
 		end
 
+		-- Second pass, now the leader is known: status tag, lime bar, ties.
+		local tie = false
+		for _, row in ipairs(shown) do
+			if not row.ignored and not row.isLeader and leaderValue ~= nil and row.value == leaderValue then
+				tie = true
+			end
+		end
+		for _, row in ipairs(shown) do
+			if row.ignored then
+				row.status:SetText("IGNORED")
+				row.status:SetTextColor(0.6, 0.3, 0.3)
+				row.leadBar:Hide()
+				row:SetBackdropColor(0, 0, 0, 0)
+			elseif row.isLeader then
+				row.status:SetText(tie and "TIED" or (rollingOpen and "LEADS" or "WINNER"))
+				row.status:SetTextColor(C.accent[1], C.accent[2], C.accent[3])
+				row.leadBar:Show()
+				row:SetBackdropColor(0.122, 0.153, 0.169, 0.9)
+			elseif tie and row.value == leaderValue then
+				row.status:SetText("TIED")
+				row.status:SetTextColor(C.accent[1], C.accent[2], C.accent[3])
+				row.leadBar:Hide()
+				row:SetBackdropColor(0.122, 0.153, 0.169, 0.9)
+			else
+				row.status:SetText("")
+				row.leadBar:Hide()
+				row:SetBackdropColor(0, 0, 0, 0)
+			end
+		end
+
 		for i = count + 1, #rows do
 			rows[i].index = nil
 			rows[i]:Hide()
+		end
+
+		if count == 0 and rollID and rr_Item and rr_Item[rollID] then
+			emptyText:Show()
+		else
+			emptyText:Hide()
+		end
+
+		-- Say when rolls are being left out, and why - both are settings.
+		local parts = {}
+		if hiddenRange > 0 then
+			table.insert(parts, hiddenRange .. " not 1-100")
+		end
+		if hiddenExtra > 0 then
+			table.insert(parts, hiddenExtra .. (hiddenExtra == 1 and " repeat roll" or " repeat rolls"))
+		end
+		if #parts > 0 then
+			hiddenText:SetText((hiddenRange + hiddenExtra) .. " hidden: " .. table.concat(parts, ", ") .. ". Allow them in Settings to see them.")
+		else
+			hiddenText:SetText("")
 		end
 	end
 

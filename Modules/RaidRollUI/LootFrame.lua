@@ -33,9 +33,7 @@ local function BuildFrame()
 		JohnnysRaidRoll.WindowSettings:Register(mainFrame, "loot", "Raid Loot")
 	end
 
-	local title = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-	title:SetPoint("TOP", 0, -16)
-	title:SetText("Raid Loot")
+	Skin:AddHeader(mainFrame, "Raid Loot")
 
 	local close = Skin:CreateButton(mainFrame, 20, 20, "X")
 	close:SetPoint("TOPRIGHT", -4, -4)
@@ -46,7 +44,8 @@ local function BuildFrame()
 	end
 
 	local settingsBtn = Skin:CreateButton(mainFrame, 70, 20, "Settings")
-	settingsBtn:SetPoint("TOPLEFT", 4, -4)
+	-- Title is top-left now, so these two sit left of the Cfg button.
+	settingsBtn:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -166, -4)
 	settingsBtn:SetScript("OnClick", function()
 		if RaidRollUI and RaidRollUI.ShowSettings then
 			RaidRollUI:ShowSettings()
@@ -67,7 +66,7 @@ local function BuildFrame()
 	end)
 
 	content = CreateFrame("Frame", nil, mainFrame)
-	content:SetPoint("TOPLEFT", 16, -44)
+	content:SetPoint("TOPLEFT", 16, -40)
 	content:SetPoint("BOTTOMRIGHT", -16, 16)
 
 	local tab = RaidRollUI.BuildLootTab(content)

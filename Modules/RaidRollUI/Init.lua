@@ -21,7 +21,7 @@ local Skin = JohnnysRaidRoll.Skin
 -- them to avoid overlapping, inside this frame's 16px tab-frame margins on
 -- each side (436 + 16 + 16 = 468) - going much narrower overlaps those
 -- buttons.
-local FRAME_WIDTH, FRAME_HEIGHT = 476, 560
+local FRAME_WIDTH, FRAME_HEIGHT = 500, 560
 local TAB_HEIGHT = 24
 
 local mainFrame, refreshTicker
@@ -34,12 +34,12 @@ local function SelectTab(name)
 	for tabName, tab in pairs(tabs) do
 		if tabName == name then
 			tab.frame:Show()
-			tab.button:SetBackdropColor(0.22, 0.22, 0.22, 0.95)
-			tab.button:SetBackdropBorderColor(0.7, 0.7, 0.7, 1)
+			tab.button:SetBackdropColor(0.122, 0.153, 0.169, 0.95)
+			tab.button:SetBackdropBorderColor(0.725, 0.886, 0.290, 1)
 		else
 			tab.frame:Hide()
-			tab.button:SetBackdropColor(0.06, 0.06, 0.06, 0.95)
-			tab.button:SetBackdropBorderColor(0.35, 0.35, 0.35, 1)
+			tab.button:SetBackdropColor(0.090, 0.114, 0.125, 0.95)
+			tab.button:SetBackdropBorderColor(0.243, 0.298, 0.322, 1)
 		end
 	end
 	if tabs[name] and tabs[name].Refresh then
@@ -67,15 +67,18 @@ local function BuildFrame()
 		JohnnysRaidRoll.WindowSettings:Register(mainFrame, "rolls", "Raid Roll")
 	end
 
-	local title = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-	title:SetPoint("TOP", 0, -16)
-	title:SetText("Raid Roll")
+	Skin:AddHeader(mainFrame, "Raid Roll")
 
 	local close = Skin:CreateButton(mainFrame, 20, 20, "X")
 	close:SetPoint("TOPRIGHT", -4, -4)
 	close:SetScript("OnClick", function() RaidRollUI:Toggle() end)
 
-	JohnnysRaidRoll.VersionCheck:AttachNotice(mainFrame)
+	-- The update notice anchors itself to its host's top-left corner, which
+	-- the title occupies, so give it a host to the right of the title.
+	local noticeHost = CreateFrame("Frame", nil, mainFrame)
+	noticeHost:SetSize(220, Skin.HEADER_HEIGHT)
+	noticeHost:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 110, 2)
+	JohnnysRaidRoll.VersionCheck:AttachNotice(noticeHost)
 
 	if JohnnysRaidRoll.WindowSettings then
 		JohnnysRaidRoll.WindowSettings:AttachButton(mainFrame)
@@ -84,12 +87,12 @@ local function BuildFrame()
 	local tabX = 16
 	for _, name in ipairs(tabOrder) do
 		local btn = Skin:CreateButton(mainFrame, 100, TAB_HEIGHT, name)
-		btn:SetPoint("TOPLEFT", tabX, -44)
+		btn:SetPoint("TOPLEFT", tabX, -38)
 		btn:SetScript("OnClick", function() SelectTab(name) end)
 		tabX = tabX + 104
 
 		local tabFrame = CreateFrame("Frame", nil, mainFrame)
-		tabFrame:SetPoint("TOPLEFT", 16, -76)
+		tabFrame:SetPoint("TOPLEFT", 16, -70)
 		tabFrame:SetPoint("BOTTOMRIGHT", -16, 16)
 		tabFrame:Hide()
 

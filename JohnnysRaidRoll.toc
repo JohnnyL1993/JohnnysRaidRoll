@@ -2,7 +2,7 @@
 ## Title: Johnny's Raid Roll
 ## Notes: Flat-skinned replacement windows for the RaidRoll addon's roll UI, loot tracker, and settings panel.
 ## Author: Johnny
-## Version: 1.1
+## Version: 1.2
 ## OptionalDeps: RaidRoll, RaidRoll_LootTracker, RaidRoll_EPGP
 ## SavedVariables: JohnnysRaidRollDB
 

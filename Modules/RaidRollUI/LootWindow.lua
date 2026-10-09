@@ -123,6 +123,31 @@ local function CreateLootRow(parent)
 	m1:SetPoint("RIGHT", m2, "LEFT", -2, 0)
 	row.m1, row.m2, row.m3 = m1, m2, m3
 
+	-- M1/M2/M3 send the three announce messages set in Settings - show the
+	-- exact text on hover, since the letters alone say nothing.
+	for id, btn in ipairs({ m1, m2, m3 }) do
+		btn:SetScript("OnEnter", function(self)
+			GameTooltip:SetOwner(self, "ANCHOR_TOP")
+			GameTooltip:AddLine("Announce message " .. id, 1, 1, 1)
+			local ok, message = pcall(function()
+				return row.itemLink and RR_AnnounceMsg and RR_AnnounceMsg(id, row.itemLink)
+			end)
+			if ok and message and message ~= "" then
+				GameTooltip:AddLine("Sends: " .. message, nil, nil, nil, true)
+			end
+			GameTooltip:AddLine("Then listens for 20 seconds for main-spec claims in chat. Change the text in Settings.", 0.6, 0.66, 0.65, true)
+			GameTooltip:Show()
+		end)
+		btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	end
+	raidRollBtn:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:AddLine("Raid Roll", 1, 1, 1)
+		GameTooltip:AddLine("Starts a roll for this item in the Raid Roll window.", nil, nil, nil, true)
+		GameTooltip:Show()
+	end)
+	raidRollBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
 	return row
 end
 

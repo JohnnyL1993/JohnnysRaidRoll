@@ -18,19 +18,25 @@ local ROW_H = 22
 -- RaidRoll_CheckButton_Update_Panel() (RaidRoll_OptionsMenu.lua:714), which
 -- re-syncs every checkbox it knows about from its current GetChecked() state
 -- in one pass - safe to call after flipping just one.
-local GENERAL_CHECKBOXES = {
-	{ "Catch Unannounced Rolls", "RR_RollCheckBox_Unannounced_panel" },
-	{ "Allow All Rolls (not just 1-100)", "RR_RollCheckBox_AllRolls_panel" },
-	{ "Allow Extra Rolls", "RR_RollCheckBox_ExtraRolls_panel" },
-	{ "Announce Winner To Guild", "RR_RollCheckBox_GuildAnnounce" },
-	{ "   ...to Officer Chat Instead", "RR_RollCheckBox_GuildAnnounce_Officer" },
-	{ "Auto Announce Countdown", "RR_RollCheckBox_Auto_Announce" },
-	{ "Auto Close Window", "RR_RollCheckBox_Auto_Close" },
-	{ "No Countdown", "RR_RollCheckBox_No_countdown" },
-	{ "Catch Multi Rollers", "RR_RollCheckBox_Multi_Rollers" },
-	{ "Track !bid", "RR_RollCheckBox_Track_Bids" },
-	{ "Number Not Required", "RR_RollCheckBox_Num_Not_Req" },
-	{ "Track !epgp In Chat", "RR_RollCheckBox_Track_EPGPSays" },
+local ROLL_CHECKBOXES = {
+	{ "Count rolls nobody announced an item for", "RR_RollCheckBox_Unannounced_panel" },
+	{ "Show rolls that aren't 1-100", "RR_RollCheckBox_AllRolls_panel" },
+	{ "Allow repeat rolls from the same player", "RR_RollCheckBox_ExtraRolls_panel" },
+	{ "Call out players who roll more than once", "RR_RollCheckBox_Multi_Rollers" },
+}
+
+local ANNOUNCE_CHECKBOXES = {
+	{ "Announce the 10s / 5s countdown and the winner automatically", "RR_RollCheckBox_Auto_Announce" },
+	{ "Skip the 10 second countdown when finishing a roll", "RR_RollCheckBox_No_countdown" },
+	{ "Also announce the winner in guild chat", "RR_RollCheckBox_GuildAnnounce" },
+	{ "   ...in officer chat instead of guild chat", "RR_RollCheckBox_GuildAnnounce_Officer" },
+	{ "Close the roll window after awarding", "RR_RollCheckBox_Auto_Close" },
+}
+
+local BID_CHECKBOXES = {
+	{ "Track !bid in chat and whispers", "RR_RollCheckBox_Track_Bids" },
+	{ "Let !bid work without a number (counts as 0)", "RR_RollCheckBox_Num_Not_Req" },
+	{ "Track !epgp in chat and whispers", "RR_RollCheckBox_Track_EPGPSays" },
 }
 
 local DISPLAY_CHECKBOXES = {
@@ -54,11 +60,38 @@ local LOOT_CHECKBOXES = {
 }
 
 local function AddSectionLabel(container, y, text)
-	local fs = container:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+	local fs = Skin:Heading(container, 11, Skin.C.muted)
 	fs:SetPoint("TOPLEFT", 4, -y)
-	fs:SetTextColor(1, 1, 1)
-	fs:SetText(text)
+	fs:SetText(string.upper(text))
+	local rule = Skin:Solid(container, "ARTWORK", Skin.C.rule)
+	rule:SetPoint("TOPLEFT", container, "TOPLEFT", 4, -(y + 15))
+	rule:SetWidth(400)
+	rule:SetHeight(1)
 	return y + ROW_H
+end
+
+-- RaidRoll ships its own explanation of every option (RAIDROLL_LOCALE, keyed
+-- by the native widget's name) for its Blizzard options panel - reuse that
+-- text here rather than describing someone else's settings from scratch.
+-- Its lines are hard-wrapped and end with "Recommended: On/Off".
+local function ShowOptionTooltip(owner, title, widgetName)
+	local text = RAIDROLL_LOCALE and RAIDROLL_LOCALE[widgetName]
+	GameTooltip:SetOwner(owner, "ANCHOR_TOPLEFT")
+	GameTooltip:AddLine((string.gsub(title, "^%s*%.*%s*", "")), 1, 1, 1)
+	if type(text) == "string" and text ~= "" then
+		local body, recommended = string.match(text, "^(.-)%s*Recommended[^:]*:%s*(.-)%s*$")
+		body = body or text
+		body = string.gsub(body, "%s*\n%s*", " ")
+		body = string.gsub(body, "^%s+", "")
+		body = string.gsub(body, "%s+$", "")
+		if body ~= "" and body ~= title then
+			GameTooltip:AddLine(body, nil, nil, nil, true)
+		end
+		if recommended and recommended ~= "" then
+			GameTooltip:AddLine("RaidRoll recommends: " .. recommended, 0.6, 0.66, 0.65)
+		end
+	end
+	GameTooltip:Show()
 end
 
 -- Returns {box=..., widgetName=...} so the caller can refresh its checked
@@ -83,6 +116,16 @@ local function AddCheckbox(container, y, label, widgetName, entries)
 	fs:SetPoint("LEFT", box, "RIGHT", 6, 0)
 	fs:SetTextColor(0.9, 0.9, 0.9)
 	fs:SetText(label)
+
+	-- Hovering the box or its label explains the option.
+	box:SetScript("OnEnter", function(self) ShowOptionTooltip(self, label, widgetName) end)
+	box:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	local hover = CreateFrame("Frame", nil, container)
+	hover:SetPoint("TOPLEFT", fs, "TOPLEFT", 0, 4)
+	hover:SetPoint("BOTTOMRIGHT", fs, "BOTTOMRIGHT", 0, -4)
+	hover:EnableMouse(true)
+	hover:SetScript("OnEnter", function() ShowOptionTooltip(box, label, widgetName) end)
+	hover:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
 	table.insert(entries, { box = box, widgetName = widgetName })
 	return y + ROW_H
@@ -193,15 +236,23 @@ function RaidRollUI.BuildSettingsTab(parent)
 	local editPulls = {}
 	local y = 4
 
-	y = AddSectionLabel(content, y, "General")
-	y = AddCheckboxGroup(content, y, GENERAL_CHECKBOXES, checkboxEntries)
+	y = AddSectionLabel(content, y, "Which rolls count")
+	y = AddCheckboxGroup(content, y, ROLL_CHECKBOXES, checkboxEntries)
+	y = y + 8
+
+	y = AddSectionLabel(content, y, "Countdown and announcing")
+	y = AddCheckboxGroup(content, y, ANNOUNCE_CHECKBOXES, checkboxEntries)
+	y = y + 8
+
+	y = AddSectionLabel(content, y, "Bids and chat commands")
+	y = AddCheckboxGroup(content, y, BID_CHECKBOXES, checkboxEntries)
 	y = y + 8
 
 	-- Chat Claims: the keyword list M1/M2/M3's 20-second listening window
 	-- (LootWindow.lua's BuildAnnounceHandler, via RR_StartChatClaimWindow)
 	-- scans raid/party chat for, e.g. "need, ms, want" (RaidRoll_OnLoad.lua's
 	-- RR_ChatClaims_MessageMatches).
-	local claimKwY, pullClaimKeywords = AddNamedEditBox(content, y, "Chat Claim Keywords (comma separated)", "RR_ChatClaimKeywords_EditBox")
+	local claimKwY, pullClaimKeywords = AddNamedEditBox(content, y, "Main-spec claim keywords (comma separated)", "RR_ChatClaimKeywords_EditBox")
 	y = claimKwY
 	table.insert(editPulls, pullClaimKeywords)
 	y = y + 8
